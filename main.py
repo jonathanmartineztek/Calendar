@@ -6,21 +6,12 @@ import os
 from pytz import timezone
 import urllib2
 
-currentDate = datetime.datetime.now(timezone("US/Pacific"))
-nextDate = currentDate + datetime.timedelta(days=1)
+nowUTC = datetime.datetime.utcnow().strftime("%Y/%m/%d")
+nextUTC = (datetime.datetime.utcnow() + datetime.timedelta(days=1)).strftime("%Y/%m/%d")
+nowPacific = datetime.datetime.now(timezone("US/Pacific"))
 spottedAfter = 1
 
 def display():
-	global home
-	
-	home = ephem.Observer()
-	home.lat = "33.98"
-	home.lon = "-117.37"
-	home.elevation = 260
-	#To get U.S. Naval Astronomical Almanac values, use these settings
-	home.pressure = 0
-	home.horizon = "-0:34"
-
 	readLog()
 	if onLine():
 		if len(logB) == 3:
@@ -44,9 +35,8 @@ def onLine():
 def readLog():
 	global log
 	
-	log = os.path.expanduser('~') + "/Documents/t/log.txt" 
-	#'/Users/mrsir' + 'Documents/t/log/txt'
-	inFile = open(log)
+	log = os.path.expanduser('~') + "/Documents/t/log.txt"
+	inFile = open("log.txt")
 	try:
 		global chodesh
 		global yyyymm
@@ -74,7 +64,7 @@ def readLog():
 
 def updateLog(update):
 	if len(logB) == 2:
-		inFile = open(log, "a")
+		inFile = open("log.txt", "a")
 		try:
 			inFile.write(update)
 		finally:
@@ -95,7 +85,7 @@ def getChodesh(num):
 def getDaysSince(roshChodesh):
 	global yom
 	
-	to_day = datetime.date(currentDate.year,currentDate.month, currentDate.day)
+	to_day = datetime.date(nowPacific.year,nowPacific.month, nowPacific.day)
 	yom = (to_day - roshChodesh).days + isNowInTimePeriod()
 
 def getNewMoon():
@@ -113,22 +103,35 @@ def getNewMoon():
 	#return <type 'datetime.date'>
 	return datetime.date(int(n[0]), int(n[1]), int(n[2]) + spottedAfter)
 
+def obServer():
+	home = ephem.Observer()
+	home.lat = "33.98"
+	home.lon = "-117.37"
+	home.elevation = 260
+	#To get U.S. Naval Astronomical Almanac values, use these settings
+	home.pressure = 0
+	home.horizon = "-0:34"
+	
+	return home
+
 def getIllumination():
 	moon = ephem.Moon()
-	moon.compute(home)
+	moon.compute(obServer())
 
-	return float(moon.moon_phase * 100)
+	return round(float(moon.moon_phase * 100),1)
 
-def getSunseTime():
+def getSunseTime(date):
 	global sunseTime
 	
+	home = obServer()
+	home.date = date
 	sun = ephem.Sun()
-	sun.compute(nextDate.strftime("%Y/%m/%d"))
+	sun.compute(home)
 	nowSet = home.next_setting(sun).datetime()
 	nowSetUTC = naive2aware(nowSet) #<type 'datetime.datetime'>
 	nowSetPacific = UTC2Pacific(nowSetUTC)
 	sunseTime = nowSetPacific.strftime("%X")
-
+	
 	#return <type 'str'>
 	return nowSetPacific
 
@@ -139,12 +142,12 @@ def UTC2Pacific(time):
 	return time.astimezone(timezone('US/Pacific'))
 
 def isNowInTimePeriod():
-	nextSet = getSunseTime()
-	toDate = currentDate.replace(currentDate.year,currentDate.month,currentDate.day, 23, 59, 59)
-	
-	return 1 if nextSet < currentDate and currentDate <= toDate else 0
+	nowSet = getSunseTime(nowUTC)
+	toDate = nowPacific.replace(nowPacific.year,nowPacific.month, nowPacific.day, 23, 59, 59)
+
+	return 1 if nowSet < nowPacific and nowPacific <= toDate else 0
 
 display()
 print("---")
-print("Next Sunset(" + getSunseTime().strftime("%x): %X"))
-print("Moon Illumination: " + str(round(getIllumination(), 1)) + "%")
+print("Next Sunset(" + getSunseTime(nextUTC).strftime("%x): %X"))
+print("Moon Illumination: " + str(getIllumination()) + "%")
