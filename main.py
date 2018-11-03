@@ -1,19 +1,18 @@
 #!/usr/bin/env python
-
-#https://repl.it/@jonathanmartinez/FussyHuskyProgram
-
+#https://repl.it/@jonathanmartinez/DeficientOutstandingFibonacci
 import ephem #pip install pyephem
 import datetime
 import os
 from pytz import timezone
-import urllib2
 
-nowPacific = datetime.datetime.now(timezone("US/Pacific"))
-nowUTC = datetime.datetime.utcnow().strftime("%Y/%m/%d")
-nextUTC = (datetime.datetime.utcnow() + datetime.timedelta(days=1)).strftime("%Y/%m/%d")
-spottedAfter = 1
+logPath = os.path.expanduser('~') + "/Documents/1og.txt"
+now_utc = datetime.datetime.utcnow().replace(tzinfo=timezone('UTC'))
+next_utc = (datetime.datetime.utcnow() + datetime.timedelta(days=1)).replace(tzinfo=timezone('UTC'))
+previousNewMoon = (ephem.previous_new_moon(now_utc).datetime().replace(tzinfo=timezone('UTC')))
+prevNewMoon = (ephem.previous_new_moon(previousNewMoon).datetime().replace(tzinfo=timezone('UTC')))
+nextNewMoon = (ephem.next_new_moon(now_utc).datetime().replace(tzinfo=timezone('UTC')))
 
-def obServer():
+def getObserver():
 	home = ephem.Observer()
 	home.lat = "33.98"
 	home.lon = "-117.37"
@@ -25,52 +24,51 @@ def obServer():
 	return home
 
 def readLog():
-	global log
-
-	log = os.path.expanduser('~') + "/Documents/log.txt"
-	inFile = open(log)
+	inFile = open("log.txt")
 	try:
 		global chodesh
-		global yyyymm
-		global year
-		global month
-		global day
-		global logB
-		global yom
-		global disPlay
 
 		content = inFile.readlines()
 		log = content[len(content)-1].split(";")
-
 		chodesh = getChodesh(log[0])
-		yyyymm = log[1]
-
-		logB = log[1].split("/")
-		year = int(logB[0])
-		month = int(logB[1])
-		if len(logB) == 2:
-			getNewMoon()
-		elif len(logB) == 3:
-			disPlay = True
-			day = int(logB[2])
-			roshChodesh = datetime.date(year, month, day+spottedAfter)
-			daySince(roshChodesh)
-			if isNowInTimePeriod():
-				if yom == 29 or yom == 30:
-					if getIllumination() >= 1.5:
-						updateLog("\n" + str(int(log[0])+1) + ";" + str(nowUTC.year) + "/" + str(nowUTC.month))
-						getNewMoon()
-
+	except:
+		raise ValueError(logPath)
 	finally:
 		inFile.close()
 
-def updateLog(update):
-	if len(logB) == 2 or "\n" in update:
-		inFile = open(log, "a")
-		try:
-			inFile.write(update)
-		finally:
-			inFile.close()
+def getIllumination(date = now_utc):
+	home = getObserver()
+	home.date = date
+	moon = ephem.Moon()
+	moon.compute(home)
+	return round(float(moon.moon_phase * 100),1)
+
+def getRoshChodesh(date = previousNewMoon):
+	found = False#True
+	rosh = date
+	while not found:
+		rosh = getSunset(rosh)
+		illumination = getIllumination(rosh)
+		if illumination <= 1.5:
+			found = False
+			getSunset(rosh)
+		else:
+			found = True
+	return rosh if now_utc >= rosh else getRoshChodesh(prevNewMoon)
+
+def getSunset(date = now_utc):
+	home = getObserver()
+	home.date = date
+	sun = ephem.Sun()
+	sun.compute(home)
+	nextSunset = home.next_setting(sun).datetime().replace(tzinfo=timezone('UTC'))
+	return nextSunset
+
+def utc2pacific(datetime):
+	return datetime.astimezone(timezone('US/Pacific'))
+
+def getDaySince():
+	return (now_utc.date() - utc2pacific(getRoshChodesh()).date()).days
 
 def getChodesh(num):
 	#input <type 'str'>
@@ -84,76 +82,17 @@ def getChodesh(num):
 	except:
 		raise ValueError('Not a month')
 
-def daySince(roshChodesh):
-	global yom
-
-	to_day = datetime.date(nowPacific.year,nowPacific.month, nowPacific.day)
-	yom = (to_day - roshChodesh).days + isNowInTimePeriod()
-
-def getNewMoon():
-	global yyyymm
-
-	n = str(ephem.next_new_moon(yyyymm)).split(" ")
-	# ["2018/10/9", "03:46:51"]
-	n = n[0].split("/")
-	#["2018", "10", "9"]
-	updateLog("/" + n[2])
-	readLog()
-
-	#return <type 'datetime.date'>
-	return datetime.date(int(n[0]), int(n[1]), int(n[2]) + spottedAfter)
-
-def getIllumination():
-	moon = ephem.Moon()
-	moon.compute(obServer())
-
-	return round(float(moon.moon_phase * 100),1)
-
-def getSunseTime(date):
-	global sunseTime
-
-	home = obServer()
-	home.date = date
-	sun = ephem.Sun()
-	sun.compute(home)
-	nowSet = home.next_setting(sun).datetime()
-	nowSetUTC = naive2aware(nowSet) #<type 'datetime.datetime'>
-	nowSetPacific = UTC2Pacific(nowSetUTC)
-	sunseTime = nowSetPacific.strftime("%X")
-
-	#return <type 'str'>
-	return nowSetPacific
-
-def naive2aware(date):
-	return timezone("UTC").localize(date)
-
-def UTC2Pacific(time):
-	return time.astimezone(timezone('US/Pacific'))
-
-def isNowInTimePeriod():
-	nowSet = getSunseTime(nowUTC)
-	toDate = nowPacific.replace(nowPacific.year,nowPacific.month, nowPacific.day, 23, 59, 59)
-
-	return 1 if nowSet < nowPacific and nowPacific <= toDate else 0
-
-def onLine():
-	try:
-		urllib2.urlopen('http://www.google.com', timeout=1)
-		return True
-	except urllib2.URLError as err:
-		return False
-
-def display():
-	readLog()
-	if onLine() and disPlay:
-			print(chodesh + " " + str(yom))
-	elif not onLine() and disPlay:
-			print(chodesh + " " + str(yom) + "*")
-
-display()
+readLog()
+print( chodesh + " " + str(getDaySince()) + " (" + str(getIllumination()) + "%)")
 print("---")
-print("Moon Illumination: " + str(getIllumination()) + "%")
-if getSunseTime(nowUTC) <= nowPacific:
-	 print("Next Sunset(" + getSunseTime(nextUTC).strftime("%x): %X"))
-else:
-	print("Next Sunset(" + getSunseTime(nowUTC).strftime("%x): %X"))
+#print("Moon Illumination: " + str(getIllumination()) + "%")
+print("Sunset:")
+#if now_utc < getSunset():
+print("Next (" + utc2pacific(getSunset()).strftime("%x): %X %Z%z"))
+#else:
+print("Next (" + utc2pacific(getSunset(next_utc)).strftime("%x): %X %Z%z"))
+
+print("---")
+print("New Moon:")
+print("Prev (" + previousNewMoon.strftime("%x): %X %Z%z(") + str(getIllumination(previousNewMoon)) + "%)")
+print("Next (" + nextNewMoon.strftime("%x): %X %Z%z(") + str(getIllumination(nextNewMoon)) + "%)")
